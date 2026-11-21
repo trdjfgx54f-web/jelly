@@ -341,7 +341,7 @@
     var p = String(path || '');
     var url = base + (p.charAt(0) === '/' ? p : '/' + p);
     var sep = url.indexOf('?') >= 0 ? '&' : '?';
-    if (url.indexOf('api_key=') < 0) url += sep + 'api_key=' + encodeURIComponent(key);
+   if (url.indexOf('ApiKey=') < 0) url += sep + 'ApiKey=' + encodeURIComponent(key);
 
     var timeout = typeof opts.timeout === 'number' ? opts.timeout : HTTP_TIMEOUT_MS;
     var dataType = opts.dataType || 'json';
