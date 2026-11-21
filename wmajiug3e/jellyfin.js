@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.7',
+    version: '1.4.0-jf12-webos4.8',
     author: '@pavelpikta',
     name: 'Библиотека',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -4905,11 +4905,11 @@
             type: 'POST', timeout: 9000, dataType: 'json',
             headers: { 'X-Lampa-Code': code }, contentType: 'application/json',
             data: JSON.stringify({ magnet: magnet })
-          }).done(function () { Lampa.Noty.show('Раздача передана в qBittorrent'); })
+          }).done(function () { Lampa.Noty.show('Раздача передана в Zona'); })
             .fail(function (xhr) {
               Lampa.Noty.show(xhr.status === 403 ? 'Проверьте код ПК' :
                 xhr.status === 400 ? 'Эта magnet-ссылка не поддерживается' :
-                xhr.status === 503 ? 'На ПК недоступен qBittorrent или папка загрузок' :
+                xhr.status === 503 ? 'На ПК недоступна Zona или папка загрузок' :
                 'ПК не ответил. Проверьте приёмник и доступ из домашней сети');
             });
         }
@@ -5018,7 +5018,7 @@
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
       param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
-      field: { name: 'Открыть библиотеку', description: 'Версия 7 · Папки и файлы' },
+      field: { name: 'Открыть библиотеку', description: 'Версия 8 · Папки и файлы' },
       onRender: function (item) {
         item.attr('data-name', STORAGE_PREFIX + 'OpenLibrary').attr('data-type', 'button');
       },
