@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.1',
+    version: '1.4.0-jf12-webos4.2',
     author: '@pavelpikta',
     name: 'Jellyfin',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -4806,6 +4806,12 @@
   }
 
   function addSettings() {
+    Lampa.SettingsApi.addParam({
+      component: SETTINGS_COMPONENT,
+      param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
+      field: { name: 'Открыть библиотеку Jellyfin' },
+      onChange: openHub
+    });
     Lampa.SettingsApi.addComponent({
       component: SETTINGS_COMPONENT,
       name: Lampa.Lang.translate('jellyfin_settings_name'),
@@ -4848,7 +4854,7 @@
 
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
-      param: { type: 'button', name: STORAGE_PREFIX + 'PickUser' },
+      param: { type: 'static', name: STORAGE_PREFIX + 'PickUser' },
       field: {
         name: Lampa.Lang.translate('jellyfin_user'),
         description: currentUserLabel(),
@@ -4856,6 +4862,7 @@
       onChange: function () {
         pickUserFromList(function () {
           Lampa.Settings.update();
+          syncUserInfoField();
         });
       },
     });
@@ -4883,6 +4890,7 @@
     Lampa.Component.add(PICKER_COMPONENT, JellyfinPickerComponent);
     Lampa.Manifest.plugins = MANIFEST;
     addSettings();
+    if (Lampa.Menu && typeof Lampa.Menu.addButton === 'function') registerMenuButtons();
     listenFullCard();
     bindJellyfinPlaybackSync();
 
