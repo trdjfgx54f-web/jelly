@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.6',
+    version: '1.4.0-jf12-webos4.7',
     author: '@pavelpikta',
     name: 'Библиотека',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -4885,9 +4885,47 @@
     $icon.on('hover:enter', openHub);
   }
 
+  function bindDownloads() {
+    Lampa.Listener.follow('torrent', function (event) {
+      if (!event || event.type !== 'onlong' || !event.menu || !event.element) return;
+      var magnet = event.element.MagnetUri || event.element.Link || '';
+      var controller = enabledControllerName('content');
+      event.menu.unshift({
+        title: 'Скачать в G:\\Zona',
+        onSelect: function () {
+          deferControllerToggle(controller);
+          var code = storageStr('DownloadCode', '');
+          if (!code) return Lampa.Noty.show('Введите код ПК в Настройки → Библиотека');
+          if (!/^magnet:\?/i.test(magnet)) return Lampa.Noty.show('Для этой раздачи нет magnet-ссылки');
+          var host = document.createElement('a');
+          host.href = apiBase();
+          if (!host.hostname) return Lampa.Noty.show('Укажите адрес сервера в настройках библиотеки');
+          $.ajax({
+            url: 'http://' + host.hostname + ':18765/download',
+            type: 'POST', timeout: 9000, dataType: 'json',
+            headers: { 'X-Lampa-Code': code }, contentType: 'application/json',
+            data: JSON.stringify({ magnet: magnet })
+          }).done(function () { Lampa.Noty.show('Раздача передана в qBittorrent'); })
+            .fail(function (xhr) {
+              Lampa.Noty.show(xhr.status === 403 ? 'Проверьте код ПК' :
+                xhr.status === 400 ? 'Эта magnet-ссылка не поддерживается' :
+                xhr.status === 503 ? 'На ПК недоступен qBittorrent или папка загрузок' :
+                'ПК не ответил. Проверьте приёмник и доступ из домашней сети');
+            });
+        }
+      });
+    });
+  }
+
   function registerMenuButtons() {
     var button = Lampa.Menu.addButton(MANIFEST.icon, 'Библиотека', openHub);
     if (button && button.parent) button.parent().prepend(button);
+    var order = Lampa.Storage.get('menu_sort', []);
+    if (Array.isArray(order)) {
+      var title = 'Библиотека';
+      var sorted = [title].concat(order.filter(function (entry) { return entry !== title; }));
+      Lampa.Storage.set('menu_sort', sorted);
+    }
   }
 
   function registerStyles() {
@@ -4980,7 +5018,7 @@
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
       param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
-      field: { name: 'Открыть библиотеку', description: 'Версия 6 · Папки и файлы' },
+      field: { name: 'Открыть библиотеку', description: 'Версия 7 · Папки и файлы' },
       onRender: function (item) {
         item.attr('data-name', STORAGE_PREFIX + 'OpenLibrary').attr('data-type', 'button');
       },
@@ -5067,6 +5105,12 @@
     Lampa.Component.add(PICKER_COMPONENT, JellyfinPickerComponent);
     Lampa.Manifest.plugins = MANIFEST;
     addSettings();
+    Lampa.SettingsApi.addParam({
+      component: SETTINGS_COMPONENT,
+      param: { type: 'input', name: STORAGE_PREFIX + 'DownloadCode', default: '', values: '' },
+      field: { name: 'Код ПК для загрузок' }
+    });
+    bindDownloads();
     if (Lampa.Menu && typeof Lampa.Menu.addButton === 'function') registerMenuButtons();
     listenFullCard();
     bindJellyfinPlaybackSync();
