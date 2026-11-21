@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.2',
+    version: '1.4.0-jf12-webos4.3',
     author: '@pavelpikta',
     name: 'Jellyfin',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -4806,10 +4806,23 @@
   }
 
   function addSettings() {
+    [['Dedupe', 'Объединять дубликаты (TMDB)'],
+     ['HideFolders', 'Скрывать папки релизов']].forEach(function (setting) {
+      Lampa.SettingsApi.addParam({
+        component: SETTINGS_COMPONENT,
+        param: { type: 'trigger', name: STORAGE_PREFIX + setting[0], default: true },
+        field: { name: setting[1] },
+        onChange: function () { invalidateUserDataCaches(); }
+      });
+    });
+
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
       param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
       field: { name: 'Открыть библиотеку Jellyfin' },
+      onRender: function (item) {
+        item.attr('data-name', STORAGE_PREFIX + 'OpenLibrary').attr('data-type', 'button');
+      },
       onChange: openHub
     });
     Lampa.SettingsApi.addComponent({
@@ -4858,6 +4871,9 @@
       field: {
         name: Lampa.Lang.translate('jellyfin_user'),
         description: currentUserLabel(),
+      },
+      onRender: function (item) {
+        item.attr('data-name', STORAGE_PREFIX + 'PickUser').attr('data-type', 'button');
       },
       onChange: function () {
         pickUserFromList(function () {
