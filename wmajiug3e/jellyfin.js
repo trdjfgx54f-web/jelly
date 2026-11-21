@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.5',
+    version: '1.4.0-jf12-webos4.6',
     author: '@pavelpikta',
     name: 'Библиотека',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -4404,11 +4404,18 @@
       if (slash < 0) { result.push(row); return; }
       var name = relative.slice(0, slash);
       var full = path.slice(0, path.length - relative.length) + name;
-      if (folders[full]) return;
-      folders[full] = true;
-      result.push({ id: 'folder:' + full, title: name, year: 'Папка',
-        folderTarget: full, poster: IMG_PLACEHOLDER, displayPoster: IMG_PLACEHOLDER,
-        raw: {}, type: 'Folder', rating: '', quality: '', playedPct: 0 });
+      var folder = folders[full];
+      if (!folder) {
+        folder = { id: 'folder:' + full, title: name, year: 'Папка',
+          folderTarget: full, poster: IMG_PLACEHOLDER, displayPoster: IMG_PLACEHOLDER,
+          raw: {}, type: 'Folder', rating: '', quality: '', playedPct: 0 };
+        folders[full] = folder;
+        result.push(folder);
+      }
+      if (folder.poster === IMG_PLACEHOLDER && row.poster && row.poster !== IMG_PLACEHOLDER) {
+        folder.poster = row.poster;
+        folder.displayPoster = row.poster;
+      }
     });
     return result.sort(function (a, b) {
       if (!!a.folderTarget !== !!b.folderTarget) return a.folderTarget ? -1 : 1;
@@ -4563,6 +4570,18 @@
         var card = makeJellyfinCard(row, cardCtx());
         if (category === 'Folders') {
           card.off('hover:enter hover:long');
+          if (row.folderTarget) {
+            var img = card.find('.card__img');
+            function folderIcon() {
+              img.hide();
+              var view = card.find('.card__view');
+              if (!view.find('.jf-folder-symbol').length) {
+                view.append('<div class="jf-folder-symbol" style="position:absolute;top:32%;left:22%;width:56%;color:#e8bf71"><svg viewBox="0 0 24 20" fill="currentColor"><path d="M1 3a2 2 0 0 1 2-2h6l3 3h9a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2z"/></svg></div>');
+              }
+            }
+            img.on('error', folderIcon);
+            if (row.poster === IMG_PLACEHOLDER || (img[0] && img[0].complete && !img[0].naturalWidth)) folderIcon();
+          }
           card.find('.card__title').text((row.folderTarget ? '▸ ' : '') + row.title);
           card.on('hover:enter', function () {
             if (row.folderTarget) openFolders(row.folderTarget, row.title);
@@ -4867,7 +4886,8 @@
   }
 
   function registerMenuButtons() {
-    Lampa.Menu.addButton(MANIFEST.icon, 'Библиотека', openHub);
+    var button = Lampa.Menu.addButton(MANIFEST.icon, 'Библиотека', openHub);
+    if (button && button.parent) button.parent().prepend(button);
   }
 
   function registerStyles() {
@@ -4960,7 +4980,7 @@
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
       param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
-      field: { name: 'Открыть библиотеку', description: 'Версия 5 · Папки и файлы' },
+      field: { name: 'Открыть библиотеку', description: 'Версия 6 · Папки и файлы' },
       onRender: function (item) {
         item.attr('data-name', STORAGE_PREFIX + 'OpenLibrary').attr('data-type', 'button');
       },
