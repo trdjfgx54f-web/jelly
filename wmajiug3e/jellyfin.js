@@ -1,5 +1,31 @@
+/* Jellyfin Extended compatibility patch, 2026-11-22.
+ * Original: https://github.com/lampaplugins/store/blob/main/wmajiug3e/jellyfin.js
+ * Original authors and functionality retained; unofficial compatibility build.
+ * Jellyfin requests use ApiKey (including images, HLS/direct video and subtitles).
+ * TMDB api_key is intentionally unchanged. No personal credentials embedded.
+ * Adds Promise.finally compatibility for webOS 4.x.
+ * Original SHA-256: f0b3a7fd0c86d7e4ecb95a60b619f0d3a1c672f6b2d81bf7c7d16fecafdded4a
+ */
 (function () {
   'use strict';
+
+  // webOS 4.x (Chromium 53) has Promise, but no Promise.prototype.finally.
+  // Preserve resolution/rejection and wait for asynchronous cleanup.
+  if (typeof Promise !== 'undefined' && !Promise.prototype.finally) {
+    Object.defineProperty(Promise.prototype, 'finally', {
+      configurable: true,
+      writable: true,
+      value: function (callback) {
+        var P = this.constructor || Promise;
+        if (typeof callback !== 'function') return this.then(callback, callback);
+        return this.then(function (value) {
+          return P.resolve(callback()).then(function () { return value; });
+        }, function (reason) {
+          return P.resolve(callback()).then(function () { throw reason; });
+        });
+      }
+    });
+  }
 
   if (window.__jellyfinPlugin_loaded) return;
   window.__jellyfinPlugin_loaded = true;
@@ -42,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0',
+    version: '1.4.0-jf12-webos4.1',
     author: '@pavelpikta',
     name: 'Jellyfin',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -341,7 +367,7 @@
     var p = String(path || '');
     var url = base + (p.charAt(0) === '/' ? p : '/' + p);
     var sep = url.indexOf('?') >= 0 ? '&' : '?';
-   if (url.indexOf('ApiKey=') < 0) url += sep + 'ApiKey=' + encodeURIComponent(key);
+    if (url.indexOf('ApiKey=') < 0) url += sep + 'ApiKey=' + encodeURIComponent(key);
 
     var timeout = typeof opts.timeout === 'number' ? opts.timeout : HTTP_TIMEOUT_MS;
     var dataType = opts.dataType || 'json';
@@ -674,7 +700,7 @@
       encodeURIComponent(id) +
       '/Images/Primary?maxHeight=500&tag=' +
       encodeURIComponent(tag) +
-      '&api_key=' +
+      '&ApiKey=' +
       encodeURIComponent(apiKey())
     );
   }
@@ -962,7 +988,7 @@
     var parts = [
       'DeviceId=' + encodeURIComponent(getDeviceId()),
       'MediaSourceId=' + encodeURIComponent(mediaSourceId(msId)),
-      'api_key=' + encodeURIComponent(apiKey()),
+      'ApiKey=' + encodeURIComponent(apiKey()),
     ];
     if (opts.userId) parts.push('UserId=' + encodeURIComponent(opts.userId));
     // Jellyfin uses DeviceId + PlaySessionId when choosing the transcoder
@@ -1161,7 +1187,7 @@
       // caption text (for example: "region:subtitle line:90%"). Request
       // SubRip from Jellyfin instead; it carries the same subtitle cues
       // without WebVTT positioning metadata.
-      '/Stream.srt?api_key=' + encodeURIComponent(apiKey());
+      '/Stream.srt?ApiKey=' + encodeURIComponent(apiKey());
   }
 
   function jellyfinSubtitleTracks(row) {
