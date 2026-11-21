@@ -68,9 +68,9 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.4',
+    version: '1.4.0-jf12-webos4.5',
     author: '@pavelpikta',
-    name: 'Jellyfin',
+    name: 'Библиотека',
     description: 'Browse and play your Jellyfin library in Lampa',
     component: SETTINGS_COMPONENT,
     icon:
@@ -144,7 +144,7 @@
         ru: 'Нет TMDB id у этого элемента',
       },
       jellyfin_error: { en: 'Something went wrong', ru: 'Что-то пошло не так' },
-      jellyfin_settings_name: { en: 'Jellyfin', ru: 'Jellyfin' },
+      jellyfin_settings_name: { en: 'Library', ru: 'Библиотека' },
       jellyfin_settings_hint: {
         en: 'Jellyfin URL and API key from Dashboard → API Keys',
         ru: 'URL Jellyfin и API-ключ из Панель → Ключи API',
@@ -4455,7 +4455,7 @@
   }
 
   function openFolders(path, title) {
-    Lampa.Activity.push({ url: '', title: title || 'Папки Zona / файлы',
+    Lampa.Activity.push({ url: '', title: title || 'Библиотека',
       component: PANEL_COMPONENT, category: 'Folders', folderPath: path || '', page: 1 });
   }
 
@@ -4523,7 +4523,7 @@
     };
 
     function headTitle() {
-      if (category === 'Folders') return object.title || 'Папки Zona / файлы';
+      if (category === 'Folders') return object.title || 'Библиотека';
       if (category === 'Series') return Lampa.Lang.translate('jellyfin_series');
       if (category === 'Resume') return Lampa.Lang.translate('jellyfin_resume');
       if (category === 'Latest') return Lampa.Lang.translate('jellyfin_latest');
@@ -4729,12 +4729,8 @@
   }
 
   function openHub() {
-    Lampa.Activity.push({
-      url: '',
-      title: Lampa.Lang.translate('jellyfin_title'),
-      component: HUB_COMPONENT,
-      page: 1,
-    });
+    folderIndexCache = null;
+    openFolders();
   }
 
   function listenFullCard() {
@@ -4871,8 +4867,7 @@
   }
 
   function registerMenuButtons() {
-    Lampa.Menu.addButton(MANIFEST.icon, Lampa.Lang.translate('jellyfin_title'), openHub);
-    Lampa.Menu.addButton(MANIFEST.icon, 'Папки Zona / файлы', function () { folderIndexCache = null; openFolders(); });
+    Lampa.Menu.addButton(MANIFEST.icon, 'Библиотека', openHub);
   }
 
   function registerStyles() {
@@ -4964,27 +4959,8 @@
   function addSettings() {
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
-      param: { type: 'static', name: STORAGE_PREFIX + 'Folders' },
-      field: { name: 'Папки Zona / файлы', description: 'Версия 4 · Все видео по путям Jellyfin, без объединения карточек' },
-      onRender: function (item) {
-        item.attr('data-name', STORAGE_PREFIX + 'Folders').attr('data-type', 'button');
-      },
-      onChange: function () { folderIndexCache = null; openFolders(); }
-    });
-    [['Dedupe', 'Объединять дубликаты (TMDB)'],
-     ['HideFolders', 'Скрывать папки релизов']].forEach(function (setting) {
-      Lampa.SettingsApi.addParam({
-        component: SETTINGS_COMPONENT,
-        param: { type: 'trigger', name: STORAGE_PREFIX + setting[0], default: true },
-        field: { name: setting[1] },
-        onChange: function () { invalidateUserDataCaches(); }
-      });
-    });
-
-    Lampa.SettingsApi.addParam({
-      component: SETTINGS_COMPONENT,
       param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
-      field: { name: 'Открыть библиотеку Jellyfin' },
+      field: { name: 'Открыть библиотеку', description: 'Версия 5 · Папки и файлы' },
       onRender: function (item) {
         item.attr('data-name', STORAGE_PREFIX + 'OpenLibrary').attr('data-type', 'button');
       },
