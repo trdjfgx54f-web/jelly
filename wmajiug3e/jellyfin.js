@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.3',
+    version: '1.4.0-jf12-webos4.4',
     author: '@pavelpikta',
     name: 'Jellyfin',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -4346,9 +4346,146 @@
     if (src && src !== IMG_PLACEHOLDER) $card.find('.card__img').attr('src', src);
   }
 
+  // Physical-path view of the videos indexed by Jellyfin. Does not scan a PC.
+  var folderIndexCache = null;
+  function folderPath(value) {
+    return String(value || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  }
+
+  function folderIndexRows(items) {
+    var seen = Object.create(null);
+    var files = [];
+    items.forEach(function (item) {
+      if (!item || !item.Id || item.IsFolder) return;
+      var sources = (item.MediaSources || []).filter(function (source) { return source.Path; });
+      if (!sources.length) sources = [{ Path: item.Path, Id: '' }];
+      sources.forEach(function (source) {
+        var path = folderPath(source.Path);
+        if (!path || /^https?:\/\//i.test(path) || seen[path]) return;
+        seen[path] = true;
+        var raw = Object.assign({}, item, { MediaSources: source.Id ? [source] : [], MediaSourceCount: 1 });
+        var row = mapRow(raw);
+        row.title = path.slice(path.lastIndexOf('/') + 1);
+        row.folderFilePath = path;
+        row.folderSourceId = source.Id || '';
+        row.mediaSourceId = source.Id || item.Id;
+        row.tmdb = null;
+        files.push(row);
+      });
+    });
+    return files;
+  }
+
+  function folderCommonRoot(files) {
+    if (!files.length) return '';
+    var parts = files[0].folderFilePath.split('/');
+    parts.pop();
+    files.forEach(function (row) {
+      var dirs = row.folderFilePath.split('/');
+      dirs.pop();
+      var i = 0;
+      while (i < parts.length && i < dirs.length && parts[i] === dirs[i]) i++;
+      parts = parts.slice(0, i);
+    });
+    return parts.join('/');
+  }
+
+  function folderChildren(files, parent) {
+    var prefix = parent ? parent + '/' : '';
+    var folders = Object.create(null);
+    var result = [];
+    files.forEach(function (row) {
+      var path = row.folderFilePath;
+      if (prefix && path.indexOf(prefix) !== 0) return;
+      var relative = path.slice(prefix.length);
+      // Preserve absolute POSIX/UNC roots while navigating the virtual tree.
+      if (!parent) relative = relative.replace(/^\/+/, '');
+      var slash = relative.indexOf('/');
+      if (slash < 0) { result.push(row); return; }
+      var name = relative.slice(0, slash);
+      var full = path.slice(0, path.length - relative.length) + name;
+      if (folders[full]) return;
+      folders[full] = true;
+      result.push({ id: 'folder:' + full, title: name, year: 'Папка',
+        folderTarget: full, poster: IMG_PLACEHOLDER, displayPoster: IMG_PLACEHOLDER,
+        raw: {}, type: 'Folder', rating: '', quality: '', playedPct: 0 });
+    });
+    return result.sort(function (a, b) {
+      if (!!a.folderTarget !== !!b.folderTarget) return a.folderTarget ? -1 : 1;
+      return a.title.localeCompare(b.title, undefined, { numeric: true });
+    });
+  }
+
+  function loadFolderIndex() {
+    return resolveUserId().then(function (userId) {
+      var key = apiBase() + '|' + userId + '|' + apiCacheEpoch;
+      if (folderIndexCache && folderIndexCache.key === key && Date.now() - folderIndexCache.time < 60000) {
+        return folderIndexCache.files;
+      }
+      var items = [];
+      function page(start) {
+        return jfHttp('/Items?UserId=' + encodeURIComponent(userId) +
+          '&Recursive=true&MediaTypes=Video&EnableTotalRecordCount=true&StartIndex=' + start +
+          '&Limit=200&SortBy=SortName&SortOrder=Ascending&Fields=' +
+          encodeURIComponent('Path,MediaSources,MediaStreams,UserData,RunTimeTicks,MediaSourceCount'),
+          { cache: false }).then(function (data) {
+          if (!data || !Array.isArray(data.Items)) throw new Error('Invalid folder index response');
+          var batch = data.Items;
+          items = items.concat(batch);
+          var next = start + batch.length;
+          var more = typeof data.TotalRecordCount === 'number' ? next < data.TotalRecordCount : batch.length === 200;
+          if (more && batch.length) return page(next);
+          var files = folderIndexRows(items);
+          if (items.length && !files.length) throw new Error('Jellyfin did not return file paths');
+          folderIndexCache = { key: key, time: Date.now(), files: files };
+          return files;
+        });
+      }
+      return page(0);
+    });
+  }
+
+  function fetchFolderRows(parent, start) {
+    return loadFolderIndex().then(function (files) {
+      var root = parent || folderCommonRoot(files);
+      var list = folderChildren(files, root);
+      return { rows: list.slice(start, start + PAGE_SIZE), next: start + PAGE_SIZE,
+        hasMore: start + PAGE_SIZE < list.length, total: list.length };
+    });
+  }
+
+  function openFolders(path, title) {
+    Lampa.Activity.push({ url: '', title: title || 'Папки Zona / файлы',
+      component: PANEL_COMPONENT, category: 'Folders', folderPath: path || '', page: 1 });
+  }
+
+  function playFolderFile(row) {
+    // Select the exact source represented by this filename, not another TMDB variant.
+    Promise.all([resolveUserId(), fetchItemMediaSources(row.id)]).then(function (parts) {
+      var item = parts[1];
+      var source = (item.MediaSources || []).find(function (entry) {
+        return (row.folderSourceId && entry.Id === row.folderSourceId) || folderPath(entry.Path) === row.folderFilePath;
+      });
+      if (!source) throw new Error('Selected file is no longer available');
+      var ready = mapRow(Object.assign({}, item, { MediaSources: [source], MediaSourceCount: 1 }));
+      ready.title = row.title;
+      ready.mediaSourceId = source.Id;
+      ready.variants = [];
+      Lampa.Player.play(playItemFromRow(ready, parts[0], true, {}));
+    }).catch(function () {
+      Lampa.Bell.push({ text: 'Не удалось открыть выбранный файл. Проверьте его доступность в Jellyfin.' });
+    });
+  }
+
+
   function PanelComponent(object) {
     var self = this;
     var category = (object && object.category) || 'Movie';
+    var physicalPath = (object && object.folderPath) || '';
+    var destroyed = false;
+    function fetchPage(start) {
+      return category === 'Folders' ? fetchFolderRows(physicalPath, start) : fetchItems(category, start);
+    }
     var scroll = new Lampa.Scroll({ mask: true, over: true, step: 250, end_ratio: 2 });
     var body = $('<div class="category-full mapping--grid cols--6 jellyfin-grid"></div>');
     var html = $('<div class="jellyfin-module"></div>');
@@ -4386,6 +4523,7 @@
     };
 
     function headTitle() {
+      if (category === 'Folders') return object.title || 'Папки Zona / файлы';
       if (category === 'Series') return Lampa.Lang.translate('jellyfin_series');
       if (category === 'Resume') return Lampa.Lang.translate('jellyfin_resume');
       if (category === 'Latest') return Lampa.Lang.translate('jellyfin_latest');
@@ -4422,7 +4560,16 @@
       }
 
       list.forEach(function (row) {
-        body.append(makeJellyfinCard(row, cardCtx()));
+        var card = makeJellyfinCard(row, cardCtx());
+        if (category === 'Folders') {
+          card.off('hover:enter hover:long');
+          card.find('.card__title').text((row.folderTarget ? '▸ ' : '') + row.title);
+          card.on('hover:enter', function () {
+            if (row.folderTarget) openFolders(row.folderTarget, row.title);
+            else playFolderFile(row);
+          });
+        }
+        body.append(card);
       });
 
       scheduleReflowFocus(scroll, self, last, { layerOnly: !!append });
@@ -4457,11 +4604,13 @@
     }
 
     function reload() {
+      if (category === 'Folders') folderIndexCache = null;
       Lampa.Activity.replace({
         url: '',
         title: headTitle(),
         component: PANEL_COMPONENT,
         category: category,
+        folderPath: physicalPath,
         page: 1,
       });
     }
@@ -4469,20 +4618,23 @@
     function loadInitial() {
       loading = true;
       self.activity.loader(true);
-      fetchItems(category, 0)
+      fetchPage(0)
         .then(function (result) {
+          if (destroyed) return;
           rows = result.rows;
           startIndex = result.next;
           hasMore = result.hasMore;
           buildGrid(rows, false);
         })
         .catch(function () {
+          if (destroyed) return;
           renderEmpty({
             title: Lampa.Lang.translate('jellyfin_error'),
-            descr: Lampa.Lang.translate('jellyfin_settings_hint'),
+            descr: category === 'Folders' ? 'Проверьте подключение и сканирование библиотеки Jellyfin. Нужны доступные пути видеофайлов.' : Lampa.Lang.translate('jellyfin_settings_hint'),
           });
         })
         .then(function () {
+          if (destroyed) return;
           loading = false;
           self.activity.loader(false);
           self.activity.toggle();
@@ -4491,8 +4643,9 @@
 
     function loadMore() {
       loading = true;
-      fetchItems(category, startIndex)
+      fetchPage(startIndex)
         .then(function (result) {
+          if (destroyed) return;
           rows = rows.concat(result.rows);
           startIndex = result.next;
           hasMore = result.hasMore;
@@ -4500,6 +4653,7 @@
         })
         .catch(function () { })
         .then(function () {
+          if (destroyed) return;
           loading = false;
         });
     }
@@ -4548,6 +4702,7 @@
       return html;
     };
     this.destroy = function () {
+      destroyed = true;
       Lampa.Listener.remove('jellyfin:row-updated', onRowUpdated);
       cardsById = {};
       scroll.destroy();
@@ -4717,6 +4872,7 @@
 
   function registerMenuButtons() {
     Lampa.Menu.addButton(MANIFEST.icon, Lampa.Lang.translate('jellyfin_title'), openHub);
+    Lampa.Menu.addButton(MANIFEST.icon, 'Папки Zona / файлы', function () { folderIndexCache = null; openFolders(); });
   }
 
   function registerStyles() {
@@ -4806,6 +4962,15 @@
   }
 
   function addSettings() {
+    Lampa.SettingsApi.addParam({
+      component: SETTINGS_COMPONENT,
+      param: { type: 'static', name: STORAGE_PREFIX + 'Folders' },
+      field: { name: 'Папки Zona / файлы', description: 'Версия 4 · Все видео по путям Jellyfin, без объединения карточек' },
+      onRender: function (item) {
+        item.attr('data-name', STORAGE_PREFIX + 'Folders').attr('data-type', 'button');
+      },
+      onChange: function () { folderIndexCache = null; openFolders(); }
+    });
     [['Dedupe', 'Объединять дубликаты (TMDB)'],
      ['HideFolders', 'Скрывать папки релизов']].forEach(function (setting) {
       Lampa.SettingsApi.addParam({
