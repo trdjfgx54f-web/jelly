@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.10',
+    version: '1.4.0-jf12-webos4.13',
     author: '@pavelpikta',
     name: 'Библиотека',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -3085,8 +3085,11 @@
       .then(function (ready) {
         return resolveUserId().then(function (userId) {
           var playItem = playItemFromRow(ready, userId, true, streamOpts);
-          playItem.playlist = playlistFromRows(rows, userId, streamOpts);
-          Lampa.Player.play(playItem);
+          var playlist = playlistFromRows(rows, userId, streamOpts);
+          var index = rows.findIndex(function (entry) { return entry === row || entry.id === row.id; });
+          if (index >= 0) playlist[index] = playItem;
+          else playlist.unshift(playItem);
+          playLibraryVideo(playItem, playlist);
         });
       })
       .catch(function () {
@@ -3265,104 +3268,15 @@
       : row.title || cardTitle(raw);
     var duration = ticksToSeconds(raw.RunTimeTicks);
     var quality = row.quality || qualityLabelFromItem(raw) || 'Jellyfin';
+    var html = $('<div class="selector jf-choice"><span class="jf-play" aria-hidden="true">▶</span><div class="jf-choice-copy"><div class="jf-choice-title"></div><div class="jf-choice-meta"></div><div class="jf-choice-progress"></div></div></div>');
+    html.find('.jf-choice-title').text(isEpisode ? episodeCode(raw) + ' · ' + title : 'Смотреть фильм');
     var info = [];
-    var date = jellyfinPickerDate(row);
-    var isWatched = row.watched ||
-      Number(row.playedPct) >= 100 ||
-      !!(raw.UserData && raw.UserData.Played) ||
-      Number(raw.UserData && raw.UserData.PlayedPercentage) >= 100;
-    var html;
-
-    if (row.rating) {
-      try {
-        info.push(Lampa.Template.get('lampac_prestige_rate', {
-          rate: parseFloat(row.rating + '').toFixed(1),
-        }, true));
-      } catch (e) {
-        info.push(jellyfinPickerText(row.rating));
-      }
-    }
-    if (date) info.push(jellyfinPickerText(date));
-    info.push('Jellyfin');
-
-    try {
-      html = Lampa.Template.get('lampac_prestige_full', {
-        title: jellyfinPickerText(title),
-        time: Lampa.Utils.secondsToTime(duration, true),
-        info: info.map(function (item) {
-          return '<span>' + item + '</span>';
-        }).join('<span class="online-prestige-split">●</span>'),
-        quality: jellyfinPickerText(quality),
-      });
-    } catch (e) {
-      html = $(
-        '<div class="online-prestige online-prestige--full selector jellyfin-online-row">' +
-        '<div class="online-prestige__img"><img alt=""><div class="online-prestige__loader"></div></div>' +
-        '<div class="online-prestige__body"><div class="online-prestige__head">' +
-        '<div class="online-prestige__title"></div><div class="online-prestige__time"></div></div>' +
-        '<div class="online-prestige__timeline"></div><div class="online-prestige__footer">' +
-        '<div class="online-prestige__info"></div><div class="online-prestige__quality"></div>' +
-        '</div></div></div>'
-      );
-      html.find('.online-prestige__title').text(title);
-      html.find('.online-prestige__time').text(Lampa.Utils.secondsToTime(duration, true));
-      html.find('.online-prestige__info').text('Jellyfin');
-      html.find('.online-prestige__quality').text(quality);
-    }
-    html.addClass('jellyfin-online-row');
-
-    var image = html.find('.online-prestige__img');
-    var loader = image.find('.online-prestige__loader');
-    var imageNode = image.find('img')[0];
-    var imageUrl = row.displayPoster || row.poster || posterUrl(raw);
-    var episodeNumber = isEpisode ? episodeCodeShort(raw) : '';
-
-    function finishImage() {
-      image.addClass('online-prestige__img--loaded');
-      loader.remove();
-      if (episodeNumber && !image.find('.online-prestige__episode-number').length) {
-        image.append('<div class="online-prestige__episode-number">' + episodeNumber + '</div>');
-      }
-    }
-
-    if (imageNode && imageUrl && imageUrl !== IMG_PLACEHOLDER) {
-      imageNode.onerror = function () {
-        imageNode.onerror = null;
-        imageNode.src = './img/img_broken.svg';
-        finishImage();
-      };
-      imageNode.onload = finishImage;
-      imageNode.src = imageUrl;
-    } else {
-      if (imageNode) imageNode.src = IMG_PLACEHOLDER;
-      finishImage();
-    }
-
-    var resumeSec = Math.max(0, Number(row.resumeSec) || 0);
-    var playedPct = Math.max(0, Number(row.playedPct) || 0);
-    if (duration > 0 && resumeSec > 0) {
-      playedPct = Math.max(playedPct, resumeSec / duration * 100);
-    }
-    if (isWatched) {
-      playedPct = 100;
-      resumeSec = duration || resumeSec;
-    } else if (duration > 0 && resumeSec <= 0 && playedPct > 0) {
-      resumeSec = duration * playedPct / 100;
-    }
-    var timeline = {
-      time: resumeSec,
-      duration: duration || 0,
-      percent: Math.min(100, playedPct),
-    };
-    try {
-      html.find('.online-prestige__timeline').append(Lampa.Timeline.render(timeline));
-    } catch (e) { }
-
-    if (isWatched) {
-      try {
-        image.append('<div class="online-prestige__viewed">' + Lampa.Template.get('icon_viewed', {}, true) + '</div>');
-      } catch (e) { }
-    }
+    if (duration > 0) info.push(Lampa.Utils.secondsToTime(duration, true));
+    if (quality && quality !== 'Jellyfin') info.push(quality);
+    if (row.watched || row.playedPct >= 100) info.push('Просмотрено');
+    else if (row.playedPct > 0) info.push('Просмотрено ' + Math.round(row.playedPct) + '%');
+    html.find('.jf-choice-meta').text(info.join(' · '));
+    if (row.playedPct > 0) html.find('.jf-choice-progress').append($('<i></i>').css('width', Math.min(100, row.playedPct) + '%'));
 
     html
       .on('hover:focus', function (e) {
@@ -3530,6 +3444,22 @@
           closeFilterSoon();
         }
       };
+      var screen = files.render().addClass('jf-cinema');
+      var images = [];
+      if (movie.backdrop_path) images.push(Lampa.Api.img(movie.backdrop_path, 'w1280'));
+      var raw = sourceRow.raw || {};
+      if (raw.BackdropImageTags && raw.BackdropImageTags.length && raw.Id) {
+        images.push(apiBase() + '/Items/' + encodeURIComponent(raw.Id) + '/Images/Backdrop/0?maxWidth=1280&ApiKey=' + encodeURIComponent(apiKey()));
+      }
+      var poster = sourceRow.displayPoster || sourceRow.poster || movie.img;
+      if (poster && poster !== IMG_PLACEHOLDER) images.push(poster);
+      var art = $('<img class="jf-scene" alt="">').prependTo(screen);
+      function nextImage() {
+        if (images.length && !destroyed) art.attr('src', images.shift());
+        else art.remove();
+      }
+      art.on('error', nextImage);
+      nextImage();
       var filterView = filter.render();
       filterView.find('.filter--search').remove();
       filterView.find('.filter--sort span').text(Lampa.Lang.translate('settings_rest_source'));
@@ -4466,9 +4396,9 @@
       component: PANEL_COMPONENT, category: 'Folders', folderPath: path || '', page: 1 });
   }
 
-  function playLibraryVideo(item) {
+  function playLibraryVideo(item, playlist) {
     // Register the actual Jellyfin item, then play that same playlist entry.
-    Lampa.Player.playlist([item]);
+    Lampa.Player.playlist(playlist || [item]);
     item.continue_play = true;
     item.launch_player = 'inner';
     Lampa.Player.play(item);
@@ -4780,9 +4710,9 @@
 
       function mountFullCardButton(onEnter) {
         var $btn = $(
-          '<div class="full-start__button selector button--jellyfin" aria-label="Jellyfin" title="Jellyfin">' +
+          '<div class="full-start__button selector button--jellyfin" aria-label="Библиотека" title="Библиотека">' +
           FULLSTART_BTN_ICON +
-          '<span>Jellyfin</span>' +
+          '<span>Библиотека</span>' +
           '</div>'
         );
         $btn.on('hover:enter', onEnter);
@@ -5011,6 +4941,11 @@
       '.jellyfin-state{padding:2em 1.2em;text-align:center;max-width:36em;margin:0 auto}' +
       '.jellyfin-state__title{font-size:1.1em;font-weight:700;margin-bottom:.6em}' +
       '.jellyfin-state__descr{opacity:.75;margin-bottom:1.2em;line-height:1.45}' +
+      '.jf-cinema{position:relative;isolation:isolate;overflow:hidden;min-height:78vh;background:linear-gradient(120deg,#172338,#273444 65%,#19202d)}' +
+      '.jf-cinema .jf-scene,.jf-cinema:before{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}.jf-cinema .jf-scene{object-fit:cover;object-position:50% 30%;opacity:.65}.jf-cinema:before{content:"";z-index:1;background:linear-gradient(90deg,rgba(9,15,25,.96),rgba(9,15,25,.83) 38%,rgba(9,15,25,.24))}' +
+      '.jf-cinema .explorer__left,.jf-cinema .explorer__files{position:relative;z-index:2;box-sizing:border-box;min-width:0}.jf-cinema .explorer__left{width:38%}.jf-cinema .explorer__files{width:62%}.jf-cinema .explorer__card{padding:1em 1.4em}.jf-cinema .explorer-card__descr{line-height:1.4;overflow-wrap:break-word;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:7;overflow:hidden}.jf-cinema .explorer-card__title{line-height:1.15}.jf-cinema .explorer-card__head-img{max-height:18vh}.jf-cinema .explorer-card__head-img img{object-fit:cover}' +
+      '.jf-choice{display:flex;align-items:center;padding:1em 1.1em;margin:.65em 1em;border-radius:.7em;border:2px solid transparent;background:rgba(14,23,36,.88);color:#fff}.jf-choice.focus{border-color:white;background:#263b50}.jf-play{flex:0 0 2em;height:2em;line-height:2em;text-align:center;border-radius:50%;background:#eee;color:#172332;margin-right:.9em}.jf-choice-copy{min-width:0}.jf-choice-title{font-weight:bold;line-height:1.25}.jf-choice-meta{font-size:.85em;color:#d2dbe2}.jf-choice-progress i{display:block;height:.15em;background:#91c8db;margin-top:.3em}' +
+      '@media(max-width:600px){.jf-cinema .explorer__files{width:100%}.jf-cinema .explorer__left{display:none}}' +
       '.button--jellyfin{display:inline-flex;align-items:center;justify-content:center;gap:0}' +
       '.button--jellyfin .jellyfin-fullstart__icon{display:block;width:1.35em;height:1.35em;flex-shrink:0}' +
       '.button--jellyfin span{display:none!important}' +
@@ -5026,7 +4961,7 @@
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
       param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
-      field: { name: 'Открыть библиотеку', description: 'Версия 10 · Папки и файлы' },
+      field: { name: 'Открыть библиотеку', description: 'Версия 13 · Папки и файлы' },
       onRender: function (item) {
         item.attr('data-name', STORAGE_PREFIX + 'OpenLibrary').attr('data-type', 'button');
       },
