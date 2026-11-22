@@ -68,7 +68,7 @@
 
   var MANIFEST = {
     type: 'video',
-    version: '1.4.0-jf12-webos4.9',
+    version: '1.4.0-jf12-webos4.10',
     author: '@pavelpikta',
     name: 'Библиотека',
     description: 'Browse and play your Jellyfin library in Lampa',
@@ -4466,67 +4466,12 @@
       component: PANEL_COMPONENT, category: 'Folders', folderPath: path || '', page: 1 });
   }
 
-  // Play the selected home-server stream directly in the TV web engine.
-  var closeLibraryVideo = null;
   function playLibraryVideo(item) {
-    if (!storageToggle('LocalVideo', true)) return Lampa.Player.play(item);
-    if (closeLibraryVideo) closeLibraryVideo();
-    var previous = enabledControllerName('content');
-    var box = document.createElement('div');
-    box.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:black;z-index:2147483647';
-    var video = document.createElement('video');
-    video.controls = true;
-    video.style.cssText = 'width:100%;height:100%;object-fit:contain';
-    var back = document.createElement('button');
-    back.textContent = '‹ Назад';
-    back.style.cssText = 'position:absolute;top:2%;left:2%;font-size:1em;color:white;background:#222a;border:0;padding:.35em';
-    var closed = false;
-    function close() {
-      if (closed) return;
-      closed = true;
-      closeLibraryVideo = null;
-      document.removeEventListener('keydown', key, true);
-      video.onerror = null;
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-      box.parentNode.removeChild(box);
-      Lampa.Controller.toggle(previous);
-    }
-    function error() {
-      if (closed) return;
-      close();
-      Lampa.Noty.show('Поток не открылся. Попробуйте HLS или отключите прямой просмотр в настройках библиотеки.');
-    }
-    function resume() {
-      var pending = video.play();
-      if (pending && pending.catch) pending.catch(function (e) {
-        if (!closed && e.name !== 'AbortError' && e.name !== 'NotAllowedError') error();
-      });
-    }
-    function key(e) {
-      var k = e.keyCode;
-      if ([8, 27, 461, 13, 32, 415, 19, 37, 39].indexOf(k) < 0) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      if (k === 8 || k === 27 || k === 461) close();
-      else if (k === 37 || k === 39) {
-        if (isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + (k === 37 ? -10 : 10)));
-      } else if (k === 415 || (k !== 19 && video.paused)) resume();
-      else video.pause();
-    }
-    box.appendChild(video);
-    box.appendChild(back);
-    document.body.appendChild(box);
-    closeLibraryVideo = close;
-    back.onclick = close;
-    video.onended = close;
-    video.onerror = error;
-    document.addEventListener('keydown', key, true);
-    Lampa.Controller.add('jellyfinLocalVideo', { toggle: function () {}, back: close });
-    Lampa.Controller.toggle('jellyfinLocalVideo');
-    video.src = item.url;
-    resume();
+    // Register the actual Jellyfin item, then play that same playlist entry.
+    Lampa.Player.playlist([item]);
+    item.continue_play = true;
+    item.launch_player = 'inner';
+    Lampa.Player.play(item);
   }
 
   function playFolderFile(row) {
@@ -5081,7 +5026,7 @@
     Lampa.SettingsApi.addParam({
       component: SETTINGS_COMPONENT,
       param: { type: 'static', name: STORAGE_PREFIX + 'OpenLibrary' },
-      field: { name: 'Открыть библиотеку', description: 'Версия 9 · Папки и файлы' },
+      field: { name: 'Открыть библиотеку', description: 'Версия 10 · Папки и файлы' },
       onRender: function (item) {
         item.attr('data-name', STORAGE_PREFIX + 'OpenLibrary').attr('data-type', 'button');
       },
@@ -5172,11 +5117,6 @@
       component: SETTINGS_COMPONENT,
       param: { type: 'input', name: STORAGE_PREFIX + 'DownloadCode', default: '', values: '' },
       field: { name: 'Код ПК для загрузок' }
-    });
-    Lampa.SettingsApi.addParam({
-      component: SETTINGS_COMPONENT,
-      param: { type: 'trigger', name: STORAGE_PREFIX + 'LocalVideo', default: true },
-      field: { name: 'Прямой просмотр файлов', description: 'OK — пауза, стрелки — перемотка, Назад — библиотека' }
     });
     bindDownloads();
     if (Lampa.Menu && typeof Lampa.Menu.addButton === 'function') registerMenuButtons();
